@@ -1,0 +1,210 @@
+---
+title: "Milestone Report"
+author: "Zainil Jessani"
+date: "June 12, 2016"
+output: html_document
+---
+
+## SYNOPSIS
+
+The goal of the Capstone Data Science Project is to create a predictive text application using data obtained from SwiftKey. The following Milestone Report outlines the steps taken to download, sample, and explore the data provided. At the end an overview of the predictive algorithm will be provided.
+
+## DOWNLOAD
+
+The data for this Capstone Project was obtained from SwiftKey via the Coursera website.
+
+```{r eval=FALSE}
+data.source <- "https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-Swiftkey.zip"
+
+data.destination <- "Coursera-Swiftkey.zip"
+download.file(data.source, data.destination) ## download
+unzip(data.destination)  ## extraction
+```
+
+## DESCRIPTION
+
+There are 4 languages provided; Russian, Finnish, German, and English. Using the English data the following is a breakdown of the files (done in Mac OS X terminal):
+
+Files:  "en_US.blogs.txt" | "en_US.twitter.txt" | "en_US.news.txt"    
+Size:    210 MB | 167 MB | 205 MB     
+Lines:   899,288 | 2,360,148 | 1,010,242     
+Words:   37,334,690 | 30,374,206 | 34,372,720    
+
+## SAMPLE
+
+Given the large size of the data files a random sample was taken from each of the 3 files to give a approximation for the purpose of exploratory analysis and fine tuning methods for data cleaning.  
+
+```{r eval=FALSE}
+sample.data <- function(input, output, probability) { ##sample function
+    conn <- file(input, "r")
+    set.seed(967)
+    all.sample <- readLines(conn, 
+                            encoding = "UTF-8", 
+                            skipNul = TRUE)
+    subset.input <- all.sample[rbinom(n = length(all.sample), 
+                                      size = 1, 
+                                      prob = probability) == 1]
+    close(conn)
+    
+    conn.2 <- file(output, "w")
+    writeLines(subset.input, conn.2)
+    close(conn.2)
+}
+
+sample.data("en_US.blogs.txt", 
+            "sample/sample.en_US.blogs.txt",
+            0.081) ##blogs sample
+sample.data("en_US.news.txt", 
+            "sample/sample.en_US.news.txt", 
+            0.061) ##news sample
+sample.data("en_US.twitter.txt", 
+            "sample/sample.en_US.twitter.txt", 
+            0.00698) ##twitter sample
+```
+
+## CORPUS
+
+The next step in the analysis was to create a Corpus (a structured set of texts) to store the sampled text files that were created above.
+
+```{r eval=FALSE}
+library(tm)
+docs <- DirSource("sample/") ##source object
+corpus <- VCorpus(docs)  ##stored in memory
+```
+
+## CLEANING
+
+The first step in cleaning the Corpus was to load a profanity text in an effort to rid the Corpus of profane language. This was followed up by using the "tm" package to rid the corpus of punctuation, numbers, profanity, additional whitespace, and convert all characters to lowercase.
+
+```{r eval=FALSE}
+conn.3 <- file("profanity.txt", 
+               open = "rb") ## load profanity words
+profanity <- readLines(conn.3, 
+                       encoding = "UTF-8", 
+                       skipNul = TRUE)
+close(conn.3)
+
+spacer <- content_transformer(function(x, pattern)
+    {return (gsub(pattern, " ", x))}) ##replace special chars with " "
+
+corpus <- tm_map(corpus, spacer, ":") ## remove ":"
+corpus <- tm_map(corpus, spacer, "/") ## remove "/"
+corpus <- tm_map(corpus, spacer, "@") ## remove "@"
+corpus <- tm_map(corpus, spacer, "-") ## remove "-"
+corpus <- tm_map(corpus, spacer, "#") ## remove "#"
+corpus <- tm_map(corpus, content_transformer(tolower)) ## lowercase
+corpus <- tm_map(corpus, removeWords, profanity) ##profanity
+corpus <- tm_map(corpus, removePunctuation) ## punctuation
+corpus <- tm_map(corpus, removeNumbers) ## numbers
+corpus <- tm_map(corpus, stripWhitespace) ## whitespace
+```
+
+## ANALYSIS
+
+The analysis of the cleaned Corpus was done by first creating a Term Document Matrix (TDM) a matrix that lists all occurances of words in the Corpus. Since the Corpus has been tranformed into a mathematical object we can now use math operations to sort the words by frequency. I do this for individual words, and phrases (known as n-grams) that are 2, 3, or 4 words long (2-gram, 3-gram, 4-gram).
+
+```{r eval = FALSE}
+## 1-gram
+tdm <- TermDocumentMatrix(corpus) ## tdm
+tdm <- removeSparseTerms(tdm, 0.8) ## sparse
+freq <- colSums(t(as.matrix(tdm))) ## word frequency
+ord <- order(freq, decreasing = TRUE)  ## order by decreasing
+freq <- freq[head(ord, n = 100)] ## top 100 words
+df <- data.frame(word =names(freq), freq = freq) ## data frame
+rm(tdm, freq, ord) 
+
+## 2-gram
+bitokenizer <- function(x) 
+    unlist(lapply(ngrams(words(x),2),
+                  paste,
+                  collapse=" "), 
+           use.names = FALSE)
+bigram <- TermDocumentMatrix(corpus, 
+                             control = 
+                                 list(tokenize = bitokenizer))
+bigram <- removeSparseTerms(bigram, 0.8)
+bi.freq <- colSums(t(as.matrix(bigram)))
+bi.ord <- order(bi.freq, 
+                decreasing = TRUE)
+bi.freq <- bi.freq[head(bi.ord, n =100)]
+bi.df <- data.frame(word = names(bi.freq), 
+                    freq = bi.freq)
+rm(bitokenizer, bigram, bi.freq, bi.ord)
+
+## 3-gram
+tritokenizer <- function(x)
+    unlist(lapply(ngrams(words(x),3),
+                  paste,
+                  collapse=" "), 
+           use.names = FALSE)
+trigram <- TermDocumentMatrix(corpus, 
+                              control = 
+                                  list(tokenize = tritokenizer))
+trigram <- removeSparseTerms(trigram, 0.8)
+tri.freq <- colSums(t(as.matrix(trigram)))
+tri.ord <- order(tri.freq, 
+                 decreasing = TRUE)
+tri.freq <- tri.freq[head(tri.ord, n =100)]
+tri.df <- data.frame(word = names(tri.freq), 
+                     freq = tri.freq)
+rm(tritokenizer, trigram, tri.freq, tri.ord)
+
+## 4-gram
+quadtokenizer <- function(x)
+    unlist(lapply(ngrams(words(x),4),
+                  paste,
+                  collapse=" "), 
+           use.names = FALSE)
+quadgram <- TermDocumentMatrix(corpus, 
+                               control = 
+                                   list(tokenize = quadtokenizer))
+quadgram <- removeSparseTerms(quadgram, 0.8)
+quad.freq <- colSums(t(as.matrix(quadgram)))
+quad.ord <- order(quad.freq, 
+                  decreasing = TRUE)
+quad.freq <- quad.freq[head(quad.ord, n =100)]
+quad.df <- data.frame(word = names(quad.freq), 
+                      freq = quad.freq)
+rm(quadtokenizer, quadgram, quad.freq, quad.ord)
+
+```
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+load("df.RData")
+load("bidf.RData")
+load("tridf.RData")
+load("quaddf.RData")
+```
+
+## VISUALIZATION
+
+The following plots illustrate the analysis done above in R.
+```{r warning=FALSE, message=FALSE}
+library(ggplot2)
+
+frequency.plot <- function(data, heading, col) {
+    ggplot(data[1:20, ], aes(x = seq(1:20), y = freq)) +
+        geom_bar(stat = "identity", fill = col, width = 0.5) +
+        coord_cartesian(xlim = c(1, 20)) +
+        labs(title = heading) +
+        xlab("Words") +
+        ylab("Frequency") +
+        scale_x_discrete(breaks = seq(1, 20, by = 1), labels = data$word[1:20]) +
+        theme(axis.text.x = element_text(angle = 60, hjust = 1))
+}
+
+frequency.plot(df, "Top 20 Words", "skyblue")
+frequency.plot(bi.df, "Top 20 2-gram Pairings", "forestgreen")
+frequency.plot(tri.df, "Top 20 3-gram Pairings", "orange")
+frequency.plot(quad.df, "Top 20 4-gram Pairings", "purple")
+```
+
+## FUTURE
+
+The next step in the design of the text prediction algorithm will be to:    
+
+1) Work with a larger trainign set. The words/phrases that are rare are important because they are often descriptive in a way that stop words such as (a, as , then, can, me, etc) are not. 
+
+2) Clean the data as above.   
+
+3) Algorithm: I will try using a lookup algorithm where a user input in the Shiny App is analysed with the TDM in order to find the 3 most likely words that would succeed the user input. For example, "Where in the " might be the user input, based on this the algorithm would look in the TDM and find the most common 4-grams that correspond with the input and recommend a word to add to the end.  
